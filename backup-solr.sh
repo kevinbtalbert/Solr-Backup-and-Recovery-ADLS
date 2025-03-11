@@ -1,12 +1,19 @@
 #!/bin/bash
-# Bash script to back up all Solr collections to Azure Data Lake Storage (ADLS)
+# Secure Solr Backup Script using Knox Authentication (Base64-Encoded Credentials) with ABFS Support
 
 # Configuration
-SOLR_URL="https://ktalbert-solr-leader0.kt-az-so.prep-j1tk.a3.cloudera.site/ktalbert-solr/cdp-proxy/solr"  # Base URL for Solr on this node
-BACKUP_DIR="abfs://backups@ktazsolrstor6290fce2.dfs.core.windows.net/solr-backups"  # Updated ADLS path
-LOG_FILE="/var/log/solr_backup.log"    # Log file for recording backup actions
+SOLR_KNOX_URL="https://ktalbert-solr-leader0.kt-az-so.prep-j1tk.a3.cloudera.site/ktalbert-solr/cdp-proxy-api/solr"
+BACKUP_DIR="abfs://backups@ktazsolrstor6290fce2.dfs.core.windows.net/solr-backups"
+LOG_FILE="/tmp/solr_backup.log"
 
-# Ensure log file exists (create it if missing)
+# Knox Workload Credentials (Replace with actual workload user & password)
+KNOX_USER="ktalbert"
+KNOX_PASS="enterpasswordhere"
+
+# Base64-encode the credentials
+AUTH_HEADER="Authorization: Basic $(echo -n "${KNOX_USER}:${KNOX_PASS}" | base64)"
+
+# Ensure log file exists
 if [ ! -f "$LOG_FILE" ]; then
   touch "$LOG_FILE"
   if [ $? -ne 0 ]; then
@@ -15,7 +22,7 @@ if [ ! -f "$LOG_FILE" ]; then
   fi
 fi
 
-# Log a message (echo to console and log file)
+# Log function
 log() {
   local msg="$1"
   echo "$(date '+%Y-%m-%d %H:%M:%S') $msg" | tee -a "$LOG_FILE"
@@ -23,7 +30,7 @@ log() {
 
 log "[INFO] Starting Solr collections backup script."
 
-# 1. Ensure the backup directory exists in ADLS
+# 1. Ensure Backup Directory Exists in ADLS
 log "[INFO] Checking if backup directory exists: $BACKUP_DIR"
 hdfs dfs -test -d "$BACKUP_DIR"
 if [ $? -ne 0 ]; then
@@ -38,54 +45,53 @@ else
   log "[INFO] Backup directory already exists."
 fi
 
-# 2. Retrieve list of all collections
-log "[INFO] Fetching list of collections from Solr..."
-collections_json=$(curl -sS "${SOLR_URL}/admin/collections?action=LIST&wt=json")
-if [ $? -ne 0 ] || [[ -z "$collections_json" ]]; then
-  log "[ERROR] Failed to retrieve collections list from Solr."
-  exit 3
+# 2. Retrieve List of Collections Using Knox Authentication
+log "[INFO] Fetching list of collections from Solr via Knox..."
+collections_json=$(curl -kL -X GET "${SOLR_KNOX_URL}/admin/collections?action=LIST&wt=json" -H "$AUTH_HEADER" -sS)
+
+# Log Raw Solr Response for Debugging
+log "[DEBUG] Raw response from Solr: $collections_json"
+
+# Parse Collection Names from JSON (requires jq installed)
+collections=$(echo "$collections_json" | jq -r '.collections[]' 2>/dev/null)
+
+# Fallback to grep if jq fails
+if [[ -z "$collections" ]]; then
+  collections=$(echo "$collections_json" | grep -oP '"collections":\s*\[\K[^]]*' | tr -d '"' | tr ',' '\n')
 fi
 
-# Parse collection names from JSON (requires jq installed)
-collections=$(echo "$collections_json" | jq -r '.collections[]' 2>/dev/null)
 if [[ -z "$collections" ]]; then
-  log "[ERROR] No collections found or failed to parse the collections list."
+  log "[ERROR] No collections found or failed to parse the collections list. Raw response: $collections_json"
   exit 4
 fi
 log "[INFO] Found collections: $collections"
 
-# 3. Loop through each collection and perform backup
+# 3. Loop Through Each Collection and Perform Backup
 for col in $collections; do
   log "[INFO] --- Backing up collection: $col ---"
   
-  # 3a. Trigger a hard commit to ensure latest data is flushed to index
+  # 3a. Trigger a Hard Commit to Ensure Latest Data is Flushed to Index
   log "[INFO] Committing collection $col before backup."
-  commit_resp=$(curl -s -o /dev/null -w "%{http_code}" "${SOLR_URL}/${col}/update?commit=true")
+  commit_resp=$(curl -kL -X GET "${SOLR_KNOX_URL}/admin/collections?action=COMMIT&collection=${col}&wt=json" -H "$AUTH_HEADER" -s -o /dev/null -w "%{http_code}")
   if [[ "$commit_resp" != "200" ]]; then
     log "[WARN] Commit request for $col returned HTTP $commit_resp (proceeding with backup anyway)."
   fi
 
-  # 3b. Construct a unique backup name (collection name + timestamp)
+  # 3b. Construct a Unique Backup Name (Collection Name + Timestamp)
   timestamp=$(date '+%Y%m%d%H%M%S')
   backup_name="${col}_backup_${timestamp}"
   log "[INFO] Initiating backup for $col as snapshot '$backup_name'."
 
-  # 3c. Call Solr Collections API to backup the collection
-  response_json=$(curl -sS "${SOLR_URL}/admin/collections?action=BACKUP&name=${backup_name}&collection=${col}&location=${BACKUP_DIR}&wt=json")
+  # 3c. Call Solr Collections API to Backup the Collection via Knox, specifying the backup repository
+  response_json=$(curl -kL -X GET "${SOLR_KNOX_URL}/admin/collections?action=BACKUP&name=${backup_name}&collection=${col}&repository=backup&location=${BACKUP_DIR}&wt=json" -H "$AUTH_HEADER" -sS)
+
   if [ $? -ne 0 ] || [[ -z "$response_json" ]]; then
     log "[ERROR] Backup API call failed for collection $col (no response)."
     continue  # move to next collection
   fi
 
-  # Check Solr API response for success
+  # Check Solr API Response for Success
   status_val=$(echo "$response_json" | jq -r '.responseHeader.status' 2>/dev/null)
-  if [[ "$status_val" != "0" ]]; then
-    # If jq failed (not installed), try a text search for status":0
-    if [[ -z "$status_val" ]] && echo "$response_json" | grep -q '"status":[[:space:]]*0'; then
-      status_val="0"
-    fi
-  fi
-
   if [[ "$status_val" == "0" ]]; then
     log "[INFO] Backup successful for $col. Snapshot name: $backup_name"
   else
