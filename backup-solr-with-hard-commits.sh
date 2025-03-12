@@ -86,23 +86,50 @@ for col in $collections; do
   # 3b. Construct a Unique Backup Name (Collection Name + Timestamp)
   timestamp=$(date '+%Y%m%d%H%M%S')
   backup_name="${col}_backup_${timestamp}"
-  log "[INFO] Initiating backup for $col as snapshot '$backup_name'."
+  log "[INFO] Initiating backup for $col as snapshot '$backup_name' (async mode)."
 
-  # 3c. Call Solr Collections API to Backup the Collection via Knox
-  response_json=$(curl -kL -X GET "${SOLR_KNOX_URL}/admin/collections?action=BACKUP&name=${backup_name}&collection=${col}&repository=backup&location=${BACKUP_DIR}&wt=json" -H "$AUTH_HEADER" -sS)
+  # 3c. Call Solr Collections API to Backup the Collection in Async Mode
+  response_json=$(curl -kL -X GET "${SOLR_KNOX_URL}/admin/collections?action=BACKUP&name=${backup_name}&collection=${col}&repository=backup&location=${BACKUP_DIR}&async=${backup_name}&wt=json" -H "$AUTH_HEADER" -sS)
 
   if [ $? -ne 0 ] || [[ -z "$response_json" ]]; then
     log "[ERROR] Backup API call failed for collection $col (no response)."
     continue  # move to next collection
   fi
 
-  # Check Solr API Response for Success
-  status_val=$(echo "$response_json" | jq -r '.responseHeader.status' 2>/dev/null)
-  if [[ "$status_val" == "0" ]]; then
-    log "[INFO] Backup successful for $col. Snapshot name: $backup_name"
-  else
-    log "[ERROR] Backup failed for $col. Response: $response_json"
-  fi
+  # Extract the async request ID
+  async_request_id="$backup_name"
+
+  # Polling for Backup Status
+  log "[INFO] Polling backup status for $col..."
+  while true; do
+    status_resp=$(curl -kL -X GET "${SOLR_KNOX_URL}/admin/collections?action=REQUESTSTATUS&requestid=${async_request_id}&wt=json" -H "$AUTH_HEADER" -sS)
+
+    if [ $? -ne 0 ] || [[ -z "$status_resp" ]]; then
+      log "[ERROR] Failed to get backup status for $col. Response: $status_resp"
+      break
+    fi
+
+    status=$(echo "$status_resp" | jq -r '.status.state' 2>/dev/null)
+
+    case "$status" in
+      "completed")
+        log "[INFO] Backup completed for $col. Snapshot name: $backup_name"
+        break
+        ;;
+      "failed")
+        log "[ERROR] Backup failed for $col. Response: $status_resp"
+        break
+        ;;
+      "running")
+        log "[INFO] Backup in progress for $col... (waiting 10s)"
+        sleep 10
+        ;;
+      *)
+        log "[ERROR] Unexpected status for $col: $status"
+        break
+        ;;
+    esac
+  done
 done
 
 log "[INFO] Solr backup script completed."
