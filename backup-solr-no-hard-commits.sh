@@ -2,14 +2,21 @@
 # Secure Solr Backup Script using Knox Authentication (Base64-Encoded Credentials)
 # This version DOES NOT perform a hard commit before backing up.
 
-# Configuration
-SOLR_KNOX_URL="https://SOLR_LEADER_NODE_FQDN.cloudera.site/ktalbert-solr/cdp-proxy-api/solr"
-BACKUP_DIR="abfs://backups@STORAGE_ACCOUNT_HERE.dfs.core.windows.net/solr-backups"
-LOG_FILE="/tmp/solr_backup_no_commit.log"
+# Check for required parameters
+if [[ $# -ne 4 ]]; then
+  echo "Usage: $0 <KNOX_USER> <KNOX_PASS> <KNOX_URL> <STORAGE_ACCOUNT>"
+  exit 1
+fi
 
-# Knox Workload Credentials (Replace with actual workload user & password)
-KNOX_USER="username"
-KNOX_PASS="enterpasswordhere"
+# Assign parameters to variables
+KNOX_USER="$1"
+KNOX_PASS="$2"
+SOLR_KNOX_URL="$3"
+STORAGE_ACCOUNT="$4"
+
+# Derived Variables
+BACKUP_DIR="abfs://backups@${STORAGE_ACCOUNT}.dfs.core.windows.net/solr-backups"
+LOG_FILE="/tmp/solr_backup.log"
 
 # Base64-encode the credentials
 AUTH_HEADER="Authorization: Basic $(echo -n "${KNOX_USER}:${KNOX_PASS}" | base64)"
