@@ -1,0 +1,28 @@
+<property>
+   <name>fs.abfs.impl</name>
+   <value>org.apache.hadoop.fs.azurebfs.AzureBlobFileSystem</value>
+</property>
+<property>
+   <name>fs.azure.account.auth.type.STORAGE_BUCKET_NAME_HERE.dfs.core.windows.net</name>
+   <value>OAuth</value>
+</property>
+<property>
+   <name>fs.azure.account.oauth.provider.type.STORAGE_BUCKET_NAME_HERE.dfs.core.windows.net</name>
+   <value>org.apache.hadoop.fs.azurebfs.oauth2.ClientCredsTokenProvider</value>
+</property>
+<property
+   ><name>fs.azure.createRemoteFileSystemDuringInitialization</name>
+   <value>true</value>
+</property>
+<property>
+   <name>fs.azure.account.oauth2.client.id.STORAGE_BUCKET_NAME_HERE.dfs.core.windows.net</name>
+   <value>YOUR_CLIENT_ID_HERE</value>
+</property>
+<property>
+   <name>fs.azure.account.oauth2.client.secret.STORAGE_BUCKET_NAME_HERE.dfs.core.windows.net</name>
+   <value>SECRET_VALUE_HERE</value>
+</property>
+<property>
+   <name>fs.azure.account.oauth2.client.endpoint.STORAGE_BUCKET_NAME_HERE.dfs.core.windows.net</name>
+   <value>https://login.microsoftonline.com/TENANT_ID_HERE/oauth2/token</value>
+</property>
