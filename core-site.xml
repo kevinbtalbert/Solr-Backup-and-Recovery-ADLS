@@ -10,8 +10,8 @@
    <name>fs.azure.account.oauth.provider.type.STORAGE_BUCKET_NAME_HERE.dfs.core.windows.net</name>
    <value>org.apache.hadoop.fs.azurebfs.oauth2.ClientCredsTokenProvider</value>
 </property>
-<property
-   ><name>fs.azure.createRemoteFileSystemDuringInitialization</name>
+<property>
+   <name>fs.azure.createRemoteFileSystemDuringInitialization</name>
    <value>true</value>
 </property>
 <property>
