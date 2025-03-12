@@ -103,7 +103,6 @@ Search for **core-site.xml** and paste below to config (click **"View as XML"**)
 
 Restart Solr/Datahub and redeploy client configuration.
 
-
 ### Approach 1: Add/execute script from Solr leader node (or similar in environment)
 This script HARD commits before backup, there is also one in the repo which does not commit before taking a backup.
 [backup-solr.sh](backup-solr.sh) -- uses inline variables to run
@@ -125,3 +124,9 @@ We make use of the “backup” repository in the solr.xml file provisioned with
 
 ![](/screenshots/screenshot-cdp-datahub-solr-xml.png)
 
+### Where can I find the backups?
+Files are stored in ADLS in the assigned Storage bucket you selected: Backups >> solr-backups
+
+![](/screenshots/screenshot-8.png)
+
+![](/screenshots/screenshot-9.png)
